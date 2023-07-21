@@ -1,10 +1,18 @@
 #include <unistd.h>
 #include <termios.h>
+#include <stdlib.h>
+
+struct termios initial;
+
+void disable_raw_mode() {
+  tcsetattr(STDIN_FILENO, TCSAFLUSH, &initial);
+}
 
 void enable_raw_mode() {
-  struct termios raw;
-  tcgetattr(STDIN_FILENO, &raw);
-  raw.c_lflag &= ~(ECHO);
+  tcgetattr(STDIN_FILENO, &initial);
+  atexit(disable_raw_mode);
+  struct termios raw = initial;
+  raw.c_lflag &= ~(ECHO | ICANON);
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 
