@@ -1,3 +1,4 @@
+/*** includes ***/
 #include <unistd.h>
 #include <termios.h>
 #include <stdlib.h>
@@ -5,7 +6,11 @@
 #include <stdio.h>
 #include <errno.h>
 
+/*** data ***/
+
 struct termios initial;
+
+/*** terminal ***/
 
 void die(char *s) {
   perror(s);
@@ -30,6 +35,8 @@ void enable_raw_mode() {
   raw.c_cc[VTIME] = 1; // the unit has a value of 100 ms
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
+
+/*** init ***/
 
 int main() {
   enable_raw_mode();
