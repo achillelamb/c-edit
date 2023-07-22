@@ -5,19 +5,39 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <errno.h>
+#include <string.h>
 
 /*** defines ***/
 
 #define QUIT 'q'
 #define CTRL_KEY(k) ((k) & 0x1f)
+#define ESCAPE_PREFIX "\x1b["
 
 /*** data ***/
 
 struct termios initial;
 
+/*** output ***/
+
+void clear_screen() {
+  char clear[4] = ESCAPE_PREFIX;
+  write(STDOUT_FILENO, strcat(clear, "2J"), 4);
+}
+
+void reset_cursor() {
+  char cursor_pos[3] = ESCAPE_PREFIX;
+  write(STDOUT_FILENO, strcat(cursor_pos, "H"), 3);
+}
+
+void refresh_screen() {
+  clear_screen();
+  reset_cursor();  
+}
+
 /*** terminal ***/
 
 void die(char *s) {
+  refresh_screen();
   perror(s);
   exit(1);
 }
@@ -56,6 +76,7 @@ void editor_process_keypress() {
   char c = editor_read_key();
   switch (c) {
     case CTRL_KEY(QUIT):
+      refresh_screen();
       exit(0);
       break;
   }
@@ -66,6 +87,7 @@ void editor_process_keypress() {
 int main() {
   enable_raw_mode();
   while (1) {
+    refresh_screen();
     editor_process_keypress();
   }
   return 0;
