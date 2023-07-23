@@ -13,6 +13,7 @@
 #define QUIT 'q'
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define ESCAPE_PREFIX "\x1b["
+#define BUFFER_INIT {NULL, 0}
 
 /*** data ***/
 struct Config {
@@ -23,33 +24,69 @@ struct Config {
 
 struct Config configuration;
 
+/*** append buffer ***/
+
+struct Buffer {
+  char *buf;
+  int len;
+};
+
+
+void buf_append(struct Buffer *ab, const char *s, int len) {
+  char *new = realloc(ab->buf, ab->len + len);
+  if (new == NULL) return;
+  memcpy(&new[ab->len], s, len);
+  ab->buf = new;
+  ab->len += len;
+}
+
+void buf_free(struct Buffer *ab) {
+  free(ab->buf);
+}
+
+
 /*** output ***/
 
-void draw_rows(int rows) {
+void draw_rows(int rows, struct Buffer *b) {
   int y;
   for (y = 0; y < rows; y++) {
-    write(STDOUT_FILENO, "~", 1);
+    buf_append(b, "~", 1);
     if (y < rows - 1) {
-      write(STDOUT_FILENO, "\r\n", 2);
+      buf_append(b, "\r\n", 2);
     }
   }
 }
 
-void clear_screen() {
+void clear_screen(struct Buffer *b) {
   char clear[4] = ESCAPE_PREFIX;
-  write(STDOUT_FILENO, strcat(clear, "2J"), 4);
+  buf_append(b, strcat(clear, "2J"), 4);
 }
 
-void reset_cursor() {
+void reset_cursor(struct Buffer *b) {
   char cursor_pos[3] = ESCAPE_PREFIX;
-  write(STDOUT_FILENO, strcat(cursor_pos, "H"), 3);
+  buf_append(b, strcat(cursor_pos, "H"), 3);
+}
+
+void hide_cursor(struct Buffer *b) {
+  char hide[6] = ESCAPE_PREFIX;
+  buf_append(b, strcat(hide, "?25l"), 6);
+}
+
+void show_cursor(struct Buffer *b) {
+  char show[6] = ESCAPE_PREFIX;
+  buf_append(b, strcat(show, "?25h"), 6);
 }
 
 void refresh_screen() {
-  clear_screen();
-  reset_cursor();
-  draw_rows(configuration.screenrows);
-  reset_cursor(); 
+  struct Buffer buf = BUFFER_INIT;
+  hide_cursor(&buf);
+  clear_screen(&buf);
+  reset_cursor(&buf);
+  draw_rows(configuration.screenrows, &buf);
+  reset_cursor(&buf); 
+  show_cursor(&buf);
+  write(STDOUT_FILENO, buf.buf, buf.len);
+  buf_free(&buf);
 }
 
 /*** terminal ***/
