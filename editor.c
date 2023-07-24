@@ -14,6 +14,7 @@
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define ESCAPE_PREFIX "\x1b["
 #define BUFFER_INIT {NULL, 0}
+#define VERSION "0.02.3"
 
 /*** data ***/
 struct Config {
@@ -47,19 +48,34 @@ void buf_free(struct Buffer *ab) {
 
 /*** output ***/
 
+void clearln(struct Buffer *b) {
+  char clear[3] = ESCAPE_PREFIX;
+  buf_append(b, strcat(clear, "K"), 3);
+}
+
 void draw_rows(int rows, struct Buffer *b) {
   int y;
   for (y = 0; y < rows; y++) {
+    if (y == rows / 3) {
+      char welcome[80];
+      int welcomelen = snprintf(welcome, sizeof(welcome),
+        "c-edit -- version %s", VERSION);
+      if (welcomelen > configuration.screencols) welcomelen = configuration.screencols;
+      int padding = (configuration.screencols - welcomelen) / 2;
+      if (padding) {
+        buf_append(b, "~", 1);
+        padding--;
+      }
+      while (padding--) buf_append(b, " ", 1);
+      buf_append(b, welcome, welcomelen);
+    } else {
     buf_append(b, "~", 1);
+    }
+    clearln(b);
     if (y < rows - 1) {
       buf_append(b, "\r\n", 2);
     }
   }
-}
-
-void clear_screen(struct Buffer *b) {
-  char clear[4] = ESCAPE_PREFIX;
-  buf_append(b, strcat(clear, "2J"), 4);
 }
 
 void reset_cursor(struct Buffer *b) {
@@ -80,7 +96,6 @@ void show_cursor(struct Buffer *b) {
 void refresh_screen() {
   struct Buffer buf = BUFFER_INIT;
   hide_cursor(&buf);
-  clear_screen(&buf);
   reset_cursor(&buf);
   draw_rows(configuration.screenrows, &buf);
   reset_cursor(&buf); 
