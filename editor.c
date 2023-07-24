@@ -16,8 +16,20 @@
 #define BUFFER_INIT {NULL, 0}
 #define VERSION "0.02.3"
 
+enum Keys {
+  ARROW_LEFT = 1000,
+  ARROW_RIGHT,
+  ARROW_UP,
+  ARROW_DOWN,
+  PAGE_UP,
+  PAGE_DOWN,
+  HOME_KEY,
+  END_KEY,
+};
+
 /*** data ***/
 struct Config {
+  int cx, cy;
   int screenrows;
   int screencols;
   struct termios initial;
@@ -93,12 +105,40 @@ void show_cursor(struct Buffer *b) {
   buf_append(b, strcat(show, "?25h"), 6);
 }
 
+void move_cursor(int key) {
+  switch (key)
+  {
+  case ARROW_LEFT:
+    if (configuration.cx > 0)
+      configuration.cx--;
+    break;
+  case ARROW_RIGHT:
+    if (configuration.cx < configuration.screencols - 1)
+      configuration.cx++;
+    break;
+  case ARROW_UP:
+    if (configuration.cy > 0)
+      configuration.cy--;
+    break;
+  case ARROW_DOWN:
+    if (configuration.cy < configuration.screenrows - 1)
+      configuration.cy++;
+    break;
+  default:
+    break;
+  }
+}
+
 void refresh_screen() {
   struct Buffer buf = BUFFER_INIT;
   hide_cursor(&buf);
   reset_cursor(&buf);
   draw_rows(configuration.screenrows, &buf);
-  reset_cursor(&buf); 
+
+  char mv_cursor[32];
+  snprintf(mv_cursor, sizeof(mv_cursor), "\x1b[%d;%dH", configuration.cy + 1, configuration.cx + 1);
+  buf_append(&buf, mv_cursor, strlen(mv_cursor));
+
   show_cursor(&buf);
   write(STDOUT_FILENO, buf.buf, buf.len);
   buf_free(&buf);
@@ -131,13 +171,49 @@ void enable_raw_mode() {
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
-char editor_read_key() {
+int editor_read_key() {
   int nread;
   char c; 
   while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
     if (nread == -1 && errno != EAGAIN) die("read");
   }
-  return c;
+  if (c == ESCAPE_PREFIX[0]) {
+    char seq[3];
+    if (read(STDIN_FILENO, &seq[0], 1) != 1) return ESCAPE_PREFIX[0];
+    if (read(STDIN_FILENO, &seq[1], 1) != 1) return ESCAPE_PREFIX[0];
+    if (seq[0] == ESCAPE_PREFIX[1]) {
+      if (seq[1] >= '0' && seq[1] <= '9') {
+        if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
+        if (seq[2] == '~') {
+          switch (seq[1]) {
+            case '1': return HOME_KEY;
+            case '4': return END_KEY;
+            case '5': return PAGE_UP;
+            case '6': return PAGE_DOWN;
+            case '7': return HOME_KEY;
+            case '8': return END_KEY;
+          }
+        }
+      } else {
+        switch (seq[1]) {
+          case 'A': return ARROW_UP;
+          case 'B': return ARROW_DOWN;
+          case 'C': return ARROW_RIGHT;
+          case 'D': return ARROW_LEFT;
+          case 'H': return HOME_KEY;
+          case 'F': return END_KEY;
+        }
+      }
+    } else if (seq[0] == 'O') {
+      switch (seq[1]) {
+        case 'H': return HOME_KEY;
+        case 'F': return END_KEY;
+      }
+    }
+    return ESCAPE_PREFIX[0];
+  } else {
+    return c;
+  }
 }
 
 int get_window_size(int *rows, int *cols) {
@@ -154,11 +230,31 @@ int get_window_size(int *rows, int *cols) {
 /*** input ***/
 
 void editor_process_keypress() {
-  char c = editor_read_key();
+  int c = editor_read_key();
   switch (c) {
     case CTRL_KEY(QUIT):
       refresh_screen();
       exit(0);
+      break;
+    case HOME_KEY:
+      configuration.cx = 0;
+      break;
+    case END_KEY:
+      configuration.cx = configuration.screencols - 1;
+      break;
+    case PAGE_UP:
+    case PAGE_DOWN:
+      {
+        int times = configuration.screenrows;
+        while (times--)
+          move_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+      }
+      break;
+    case ARROW_UP:
+    case ARROW_DOWN:
+    case ARROW_LEFT:
+    case ARROW_RIGHT:
+      move_cursor(c);
       break;
   }
 }
@@ -166,6 +262,8 @@ void editor_process_keypress() {
 /*** init ***/
 
 void init_editor() {
+  configuration.cx = 0;
+  configuration.cy = 0;
   if (get_window_size(&configuration.screenrows, &configuration.screencols) == -1) die("get_window_size");
 }
 
