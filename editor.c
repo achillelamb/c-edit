@@ -46,7 +46,7 @@ struct Config {
   int screencols;
   struct termios initial;
   int num_rows;
-  Row row;
+  Row *row;
 };
 
 struct Config configuration;
@@ -99,9 +99,9 @@ void draw_rows(int rows, struct Buffer *b) {
       buf_append(b, "~", 1);
       }
     } else {
-      int len = configuration.row.size;
+      int len = configuration.row[y].size;
       if (len > configuration.screencols) len = configuration.screencols;
-      buf_append(b, configuration.row.chars, len);
+      buf_append(b, configuration.row[y].chars, len);
     }
 
     clearln(b);
@@ -249,6 +249,17 @@ int get_window_size(int *rows, int *cols) {
   }
 }
 
+/*** row operations ***/
+void append_row(char *s, size_t len) {
+  configuration.row = realloc(configuration.row, sizeof(Row) * (configuration.num_rows + 1));
+  int at = configuration.num_rows;
+  configuration.row[at].size = len;
+  configuration.row[at].chars = malloc(len + 1);
+  memcpy(configuration.row[at].chars, s, len);
+  configuration.row[at].chars[len] = '\0';
+  configuration.num_rows++;
+}
+
 /*** file i/o ***/
 
 void open_file(char *filename) {
@@ -257,16 +268,11 @@ void open_file(char *filename) {
   char *line = NULL;
   size_t linecap = 0;
   ssize_t linelen;
-  linelen = getline(&line, &linecap, fp);
-  if (linelen != -1) {
+  while ((linelen = getline(&line, &linecap, fp)) != -1) {
     while (linelen > 0 && (line[linelen - 1] == '\n' ||
                            line[linelen - 1] == '\r'))
       linelen--;
-    configuration.row.size = linelen;
-    configuration.row.chars = malloc(linelen + 1);
-    memcpy(configuration.row.chars, line, linelen);
-    configuration.row.chars[linelen] = '\0';
-    configuration.num_rows = 1;
+    append_row(line, linelen);
   }
   free(line);
   fclose(fp);
@@ -310,6 +316,7 @@ void init_editor() {
   configuration.cx = 0;
   configuration.cy = 0;
   configuration.num_rows = 0;
+  configuration.row = NULL;
   if (get_window_size(&configuration.screenrows, &configuration.screencols) == -1) die("get_window_size");
 }
 
