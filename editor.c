@@ -47,6 +47,7 @@ struct Config {
   struct termios initial;
   int num_rows;
   Row *row;
+  int row_offset;
 };
 
 struct Config configuration;
@@ -79,10 +80,20 @@ void clearln(struct Buffer *b) {
   buf_append(b, strcat(clear, "K"), 3);
 }
 
+void scroll() {
+  if (configuration.cy < configuration.row_offset) {
+    configuration.row_offset = configuration.cy;
+  }
+  if (configuration.cy >= configuration.row_offset + configuration.screenrows) {
+    configuration.row_offset = configuration.cy - configuration.screenrows + 1; 
+  }
+}
+
 void draw_rows(int rows, struct Buffer *b) {
   int y;
   for (y = 0; y < rows; y++) {
-    if (y >= configuration.num_rows) {
+    int filerow = y + configuration.row_offset;
+    if (filerow >= configuration.num_rows) {
       if (configuration.num_rows == 0 && y == rows / 3) {
         char welcome[80];
         int welcomelen = snprintf(welcome, sizeof(welcome),
@@ -99,9 +110,9 @@ void draw_rows(int rows, struct Buffer *b) {
       buf_append(b, "~", 1);
       }
     } else {
-      int len = configuration.row[y].size;
+      int len = configuration.row[filerow].size;
       if (len > configuration.screencols) len = configuration.screencols;
-      buf_append(b, configuration.row[y].chars, len);
+      buf_append(b, configuration.row[filerow].chars, len);
     }
 
     clearln(b);
@@ -142,7 +153,7 @@ void move_cursor(int key) {
       configuration.cy--;
     break;
   case ARROW_DOWN:
-    if (configuration.cy < configuration.screenrows - 1)
+    if (configuration.cy < configuration.num_rows)
       configuration.cy++;
     break;
   default:
@@ -151,13 +162,14 @@ void move_cursor(int key) {
 }
 
 void refresh_screen() {
+  scroll();
   struct Buffer buf = BUFFER_INIT;
   hide_cursor(&buf);
   reset_cursor(&buf);
   draw_rows(configuration.screenrows, &buf);
 
   char mv_cursor[32];
-  snprintf(mv_cursor, sizeof(mv_cursor), "\x1b[%d;%dH", configuration.cy + 1, configuration.cx + 1);
+  snprintf(mv_cursor, sizeof(mv_cursor), "\x1b[%d;%dH", (configuration.cy - configuration.row_offset) + 1, configuration.cx + 1);
   buf_append(&buf, mv_cursor, strlen(mv_cursor));
 
   show_cursor(&buf);
@@ -317,6 +329,7 @@ void init_editor() {
   configuration.cy = 0;
   configuration.num_rows = 0;
   configuration.row = NULL;
+  configuration.row_offset = 0;
   if (get_window_size(&configuration.screenrows, &configuration.screencols) == -1) die("get_window_size");
 }
 
