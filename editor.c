@@ -1,4 +1,9 @@
 /*** includes ***/
+
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 #include <unistd.h>
 #include <termios.h>
 #include <stdlib.h>
@@ -7,6 +12,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 
 /*** defines ***/
 
@@ -21,6 +27,7 @@ enum Keys {
   ARROW_RIGHT,
   ARROW_UP,
   ARROW_DOWN,
+  DEL_KEY,
   PAGE_UP,
   PAGE_DOWN,
   HOME_KEY,
@@ -28,11 +35,18 @@ enum Keys {
 };
 
 /*** data ***/
+typedef struct Row {
+  int size;
+  char *chars;
+} Row;
+
 struct Config {
   int cx, cy;
   int screenrows;
   int screencols;
   struct termios initial;
+  int num_rows;
+  Row row;
 };
 
 struct Config configuration;
@@ -68,21 +82,28 @@ void clearln(struct Buffer *b) {
 void draw_rows(int rows, struct Buffer *b) {
   int y;
   for (y = 0; y < rows; y++) {
-    if (y == rows / 3) {
-      char welcome[80];
-      int welcomelen = snprintf(welcome, sizeof(welcome),
-        "c-edit -- version %s", VERSION);
-      if (welcomelen > configuration.screencols) welcomelen = configuration.screencols;
-      int padding = (configuration.screencols - welcomelen) / 2;
-      if (padding) {
-        buf_append(b, "~", 1);
-        padding--;
+    if (y >= configuration.num_rows) {
+      if (configuration.num_rows == 0 && y == rows / 3) {
+        char welcome[80];
+        int welcomelen = snprintf(welcome, sizeof(welcome),
+          "c-edit -- version %s", VERSION);
+        if (welcomelen > configuration.screencols) welcomelen = configuration.screencols;
+        int padding = (configuration.screencols - welcomelen) / 2;
+        if (padding) {
+          buf_append(b, "~", 1);
+          padding--;
+        }
+        while (padding--) buf_append(b, " ", 1);
+        buf_append(b, welcome, welcomelen);
+      } else {
+      buf_append(b, "~", 1);
       }
-      while (padding--) buf_append(b, " ", 1);
-      buf_append(b, welcome, welcomelen);
     } else {
-    buf_append(b, "~", 1);
+      int len = configuration.row.size;
+      if (len > configuration.screencols) len = configuration.screencols;
+      buf_append(b, configuration.row.chars, len);
     }
+
     clearln(b);
     if (y < rows - 1) {
       buf_append(b, "\r\n", 2);
@@ -187,6 +208,7 @@ int editor_read_key() {
         if (seq[2] == '~') {
           switch (seq[1]) {
             case '1': return HOME_KEY;
+            case '3': return DEL_KEY;
             case '4': return END_KEY;
             case '5': return PAGE_UP;
             case '6': return PAGE_DOWN;
@@ -227,6 +249,29 @@ int get_window_size(int *rows, int *cols) {
   }
 }
 
+/*** file i/o ***/
+
+void open_file(char *filename) {
+  FILE *fp = fopen(filename, "r");
+  if (!fp) die("fopen");
+  char *line = NULL;
+  size_t linecap = 0;
+  ssize_t linelen;
+  linelen = getline(&line, &linecap, fp);
+  if (linelen != -1) {
+    while (linelen > 0 && (line[linelen - 1] == '\n' ||
+                           line[linelen - 1] == '\r'))
+      linelen--;
+    configuration.row.size = linelen;
+    configuration.row.chars = malloc(linelen + 1);
+    memcpy(configuration.row.chars, line, linelen);
+    configuration.row.chars[linelen] = '\0';
+    configuration.num_rows = 1;
+  }
+  free(line);
+  fclose(fp);
+}
+
 /*** input ***/
 
 void editor_process_keypress() {
@@ -264,12 +309,16 @@ void editor_process_keypress() {
 void init_editor() {
   configuration.cx = 0;
   configuration.cy = 0;
+  configuration.num_rows = 0;
   if (get_window_size(&configuration.screenrows, &configuration.screencols) == -1) die("get_window_size");
 }
 
-int main() {
+int main(int argc, char *argv[]) {
   enable_raw_mode();
   init_editor();
+  if (argc >= 2){
+    open_file(argv[1]);
+  }
   while (1) {
     refresh_screen();
     editor_process_keypress();
