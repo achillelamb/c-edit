@@ -152,10 +152,18 @@ void move_cursor(int key) {
   case ARROW_LEFT:
     if (configuration.cx > 0)
       configuration.cx--;
+    else if (configuration.cy > 0) {
+      configuration.cy--;
+      configuration.cx = configuration.row[configuration.cy].size;
+    }
     break;
   case ARROW_RIGHT:
       if (row && configuration.cx < row->size)
         configuration.cx++;
+      else if (row && configuration.cx == row->size) {
+        configuration.cy++;
+        configuration.cx = 0;
+      }
     break;
   case ARROW_UP:
     if (configuration.cy > 0)
