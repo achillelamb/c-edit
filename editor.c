@@ -48,6 +48,7 @@ struct Config {
   int num_rows;
   Row *row;
   int row_offset;
+  int col_offset;
 };
 
 struct Config configuration;
@@ -87,6 +88,12 @@ void scroll() {
   if (configuration.cy >= configuration.row_offset + configuration.screenrows) {
     configuration.row_offset = configuration.cy - configuration.screenrows + 1; 
   }
+  if (configuration.cx < configuration.col_offset) {
+    configuration.col_offset = configuration.cx;
+  }
+  if (configuration.cx >= configuration.col_offset + configuration.screencols) {
+    configuration.col_offset = configuration.cx - configuration.screencols + 1;
+  }
 }
 
 void draw_rows(int rows, struct Buffer *b) {
@@ -110,9 +117,10 @@ void draw_rows(int rows, struct Buffer *b) {
       buf_append(b, "~", 1);
       }
     } else {
-      int len = configuration.row[filerow].size;
+      int len = configuration.row[filerow].size - configuration.col_offset;
+      if (len < 0) len = 0;
       if (len > configuration.screencols) len = configuration.screencols;
-      buf_append(b, configuration.row[filerow].chars, len);
+      buf_append(b, &configuration.row[filerow].chars[configuration.col_offset], len);
     }
 
     clearln(b);
@@ -138,6 +146,7 @@ void show_cursor(struct Buffer *b) {
 }
 
 void move_cursor(int key) {
+  Row *row = (configuration.cy >= configuration.num_rows) ? NULL : &configuration.row[configuration.cy];
   switch (key)
   {
   case ARROW_LEFT:
@@ -145,8 +154,8 @@ void move_cursor(int key) {
       configuration.cx--;
     break;
   case ARROW_RIGHT:
-    if (configuration.cx < configuration.screencols - 1)
-      configuration.cx++;
+      if (row && configuration.cx < row->size)
+        configuration.cx++;
     break;
   case ARROW_UP:
     if (configuration.cy > 0)
@@ -159,6 +168,12 @@ void move_cursor(int key) {
   default:
     break;
   }
+
+  row = (configuration.cy >= configuration.num_rows) ? NULL : &configuration.row[configuration.cy];
+  int rowlen = row ? row->size : 0;
+  if (configuration.cx > rowlen) {
+    configuration.cx = rowlen;
+  }
 }
 
 void refresh_screen() {
@@ -169,7 +184,8 @@ void refresh_screen() {
   draw_rows(configuration.screenrows, &buf);
 
   char mv_cursor[32];
-  snprintf(mv_cursor, sizeof(mv_cursor), "\x1b[%d;%dH", (configuration.cy - configuration.row_offset) + 1, configuration.cx + 1);
+  snprintf(mv_cursor, sizeof(mv_cursor), "\x1b[%d;%dH", (configuration.cy - configuration.row_offset) + 1, 
+                                                        (configuration.cx - configuration.col_offset) + 1);
   buf_append(&buf, mv_cursor, strlen(mv_cursor));
 
   show_cursor(&buf);
@@ -330,6 +346,7 @@ void init_editor() {
   configuration.num_rows = 0;
   configuration.row = NULL;
   configuration.row_offset = 0;
+  configuration.col_offset = 0;
   if (get_window_size(&configuration.screenrows, &configuration.screencols) == -1) die("get_window_size");
 }
 
