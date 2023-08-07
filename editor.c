@@ -21,6 +21,9 @@
 #define ESCAPE_PREFIX "\x1b["
 #define BUFFER_INIT {NULL, 0}
 #define VERSION "0.02.3"
+#define TAB '\t'
+#define TAB_LEN 4
+#define SPACE ' '
 
 enum Keys {
   ARROW_LEFT = 1000,
@@ -35,13 +38,20 @@ enum Keys {
 };
 
 /*** data ***/
+
+typedef struct Render {
+  int size;
+  char *render;
+} Render;
 typedef struct Row {
   int size;
   char *chars;
+  Render render;
 } Row;
 
 struct Config {
   int cx, cy;
+  int render_x;
   int screenrows;
   int screencols;
   struct termios initial;
@@ -81,18 +91,33 @@ void clearln(struct Buffer *b) {
   buf_append(b, strcat(clear, "K"), 3);
 }
 
+
+int row_cx_to_render_x(Row *row, int cx) {
+  int rx = 0;
+  for (int j = 0; j < cx; j++) {
+    if (row->chars[j] == TAB)
+      rx += (TAB_LEN - 1) - (rx % TAB_LEN);
+    rx++;
+  }
+  return rx;
+}
+
 void scroll() {
+  configuration.render_x = 0;
+  if (configuration.render_x < configuration.num_rows) {
+    configuration.render_x = row_cx_to_render_x(&configuration.row[configuration.cy], configuration.cx);
+  }
   if (configuration.cy < configuration.row_offset) {
     configuration.row_offset = configuration.cy;
   }
   if (configuration.cy >= configuration.row_offset + configuration.screenrows) {
     configuration.row_offset = configuration.cy - configuration.screenrows + 1; 
   }
-  if (configuration.cx < configuration.col_offset) {
-    configuration.col_offset = configuration.cx;
+  if (configuration.render_x < configuration.col_offset) {
+    configuration.col_offset = configuration.render_x;
   }
-  if (configuration.cx >= configuration.col_offset + configuration.screencols) {
-    configuration.col_offset = configuration.cx - configuration.screencols + 1;
+  if (configuration.render_x >= configuration.col_offset + configuration.screencols) {
+    configuration.col_offset = configuration.render_x - configuration.screencols + 1;
   }
 }
 
@@ -117,10 +142,10 @@ void draw_rows(int rows, struct Buffer *b) {
       buf_append(b, "~", 1);
       }
     } else {
-      int len = configuration.row[filerow].size - configuration.col_offset;
+      int len = configuration.row[filerow].render.size - configuration.col_offset;
       if (len < 0) len = 0;
       if (len > configuration.screencols) len = configuration.screencols;
-      buf_append(b, &configuration.row[filerow].chars[configuration.col_offset], len);
+      buf_append(b, &configuration.row[filerow].render.render[configuration.col_offset], len);
     }
 
     clearln(b);
@@ -193,7 +218,7 @@ void refresh_screen() {
 
   char mv_cursor[32];
   snprintf(mv_cursor, sizeof(mv_cursor), "\x1b[%d;%dH", (configuration.cy - configuration.row_offset) + 1, 
-                                                        (configuration.cx - configuration.col_offset) + 1);
+                                                        (configuration.render_x - configuration.col_offset) + 1);
   buf_append(&buf, mv_cursor, strlen(mv_cursor));
 
   show_cursor(&buf);
@@ -286,6 +311,30 @@ int get_window_size(int *rows, int *cols) {
 }
 
 /*** row operations ***/
+
+void update_row(Row *row) {
+  int tabs = 0;
+  for (int j = 0; j < row->size; j++) {
+    if (row->chars[j] == TAB) {
+      tabs++;
+    }
+  }
+  free(row->render.render);
+  row->render.render = malloc(row->size + tabs*(TAB_LEN - 1) + 1);
+  int idx = 0;
+  for (int j = 0; j < row->size; j++) {
+    if (row->chars[j] == TAB) {
+      do {
+        row->render.render[idx++] = SPACE;
+      } while (idx % TAB_LEN != 0);
+    } else {
+      row->render.render[idx++] = row->chars[j];
+    }
+  }
+  row->render.render[idx] = '\0';
+  row->render.size = idx;
+}
+
 void append_row(char *s, size_t len) {
   configuration.row = realloc(configuration.row, sizeof(Row) * (configuration.num_rows + 1));
   int at = configuration.num_rows;
@@ -293,6 +342,9 @@ void append_row(char *s, size_t len) {
   configuration.row[at].chars = malloc(len + 1);
   memcpy(configuration.row[at].chars, s, len);
   configuration.row[at].chars[len] = '\0';
+  configuration.row[at].render.size = 0;
+  configuration.row[at].render.render = NULL;
+  update_row(&configuration.row[at]);
   configuration.num_rows++;
 }
 
@@ -355,6 +407,7 @@ void init_editor() {
   configuration.row = NULL;
   configuration.row_offset = 0;
   configuration.col_offset = 0;
+  configuration.render_x = 0;
   if (get_window_size(&configuration.screenrows, &configuration.screencols) == -1) die("get_window_size");
 }
 
