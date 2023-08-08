@@ -379,11 +379,19 @@ void editor_process_keypress() {
       configuration.cx = 0;
       break;
     case END_KEY:
-      configuration.cx = configuration.screencols - 1;
+      if (configuration.cy < configuration.num_rows) {
+        configuration.cx = configuration.row[configuration.cy].size;
+      }
       break;
     case PAGE_UP:
     case PAGE_DOWN:
       {
+        if (c == PAGE_UP) {
+          configuration.cy = configuration.row_offset;
+        } else if (c == PAGE_DOWN) {
+          configuration.cy = configuration.row_offset + configuration.screenrows - 1;
+          if (configuration.cy > configuration.num_rows) configuration.cy = configuration.num_rows;
+        }
         int times = configuration.screenrows;
         while (times--)
           move_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
