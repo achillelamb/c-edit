@@ -59,6 +59,7 @@ struct Config {
   Row *row;
   int row_offset;
   int col_offset;
+  char *file_name;
 };
 
 struct Config configuration;
@@ -149,10 +150,33 @@ void draw_rows(int rows, struct Buffer *b) {
     }
 
     clearln(b);
-    if (y < rows - 1) {
-      buf_append(b, "\r\n", 2);
+    
+    buf_append(b, "\r\n", 2);
+    
+  }
+}
+
+void draw_status_bar(struct Buffer *b) {
+  char invert_colors[4] = ESCAPE_PREFIX;
+  buf_append(b, strcat(invert_colors, "7m"), 4);
+  char status[80], rstatus[80];
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
+    configuration.file_name ? configuration.file_name : "[New File]", configuration.num_rows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d",
+    configuration.cy + 1, configuration.num_rows);
+  if (len > configuration.screencols) len = configuration.screencols;
+  buf_append(b, status, len);
+  while (len < configuration.screencols) {
+    if (configuration.screencols - len == rlen) {
+      buf_append(b, rstatus, rlen);
+      break;
+    } else {
+      buf_append(b, " ", 1);
+      len++;
     }
   }
+  char restore_colors[3] = ESCAPE_PREFIX;
+  buf_append(b, strcat(restore_colors, "m"), 3);
 }
 
 void reset_cursor(struct Buffer *b) {
@@ -215,6 +239,7 @@ void refresh_screen() {
   hide_cursor(&buf);
   reset_cursor(&buf);
   draw_rows(configuration.screenrows, &buf);
+  draw_status_bar(&buf);
 
   char mv_cursor[32];
   snprintf(mv_cursor, sizeof(mv_cursor), "\x1b[%d;%dH", (configuration.cy - configuration.row_offset) + 1, 
@@ -351,6 +376,8 @@ void append_row(char *s, size_t len) {
 /*** file i/o ***/
 
 void open_file(char *filename) {
+  free(configuration.file_name);
+  configuration.file_name = strdup(filename);
   FILE *fp = fopen(filename, "r");
   if (!fp) die("fopen");
   char *line = NULL;
@@ -416,7 +443,9 @@ void init_editor() {
   configuration.row_offset = 0;
   configuration.col_offset = 0;
   configuration.render_x = 0;
+  configuration.file_name = NULL;
   if (get_window_size(&configuration.screenrows, &configuration.screencols) == -1) die("get_window_size");
+  configuration.screenrows--;
 }
 
 int main(int argc, char *argv[]) {
