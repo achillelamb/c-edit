@@ -13,6 +13,8 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
+#include <time.h>
+#include <stdarg.h>
 
 /*** defines ***/
 
@@ -60,6 +62,8 @@ struct Config {
   int row_offset;
   int col_offset;
   char *file_name;
+  char status_msg[80];
+  time_t status_time;
 };
 
 struct Config configuration;
@@ -177,6 +181,15 @@ void draw_status_bar(struct Buffer *b) {
   }
   char restore_colors[3] = ESCAPE_PREFIX;
   buf_append(b, strcat(restore_colors, "m"), 3);
+  buf_append(b, "\r\n", 2);
+}
+
+void draw_message_bar(struct Buffer *b) {
+  clearln(b);
+  int len = strlen(configuration.status_msg);
+  if (len > configuration.screencols) len = configuration.screencols;
+  if (len && time(NULL) - configuration.status_time < 5)
+    buf_append(b, configuration.status_msg, len);
 }
 
 void reset_cursor(struct Buffer *b) {
@@ -240,6 +253,7 @@ void refresh_screen() {
   reset_cursor(&buf);
   draw_rows(configuration.screenrows, &buf);
   draw_status_bar(&buf);
+  draw_message_bar(&buf);
 
   char mv_cursor[32];
   snprintf(mv_cursor, sizeof(mv_cursor), "\x1b[%d;%dH", (configuration.cy - configuration.row_offset) + 1, 
@@ -249,6 +263,14 @@ void refresh_screen() {
   show_cursor(&buf);
   write(STDOUT_FILENO, buf.buf, buf.len);
   buf_free(&buf);
+}
+
+void set_status_message(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(configuration.status_msg, sizeof(configuration.status_msg), fmt, ap);
+  va_end(ap);
+  configuration.status_time = time(NULL);
 }
 
 /*** terminal ***/
@@ -444,8 +466,11 @@ void init_editor() {
   configuration.col_offset = 0;
   configuration.render_x = 0;
   configuration.file_name = NULL;
+  configuration.status_msg[0] = '\0';
+  configuration.status_time = 0;
   if (get_window_size(&configuration.screenrows, &configuration.screencols) == -1) die("get_window_size");
-  configuration.screenrows--;
+  configuration.screenrows--; // status bar
+  configuration.screenrows--; // status message
 }
 
 int main(int argc, char *argv[]) {
@@ -454,6 +479,8 @@ int main(int argc, char *argv[]) {
   if (argc >= 2){
     open_file(argv[1]);
   }
+
+  set_status_message("Ctrl-Q: quit");
   while (1) {
     refresh_screen();
     editor_process_keypress();
