@@ -395,6 +395,25 @@ void append_row(char *s, size_t len) {
   configuration.num_rows++;
 }
 
+void row_insert_char(Row *row, int at, int c) {
+  if (at < 0 || at > row->size) at = row->size;
+  row->chars = realloc(row->chars, row->size + 2);
+  memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+  row->size++;
+  row->chars[at] = c;
+  update_row(row);
+}
+
+/*** editor operations ***/
+
+void editor_insert_char(int c) {
+  if (configuration.cy == configuration.num_rows) {
+    append_row("", 0);
+  }
+  row_insert_char(&configuration.row[configuration.cy], configuration.cx, c);
+  configuration.cx++;
+}
+
 /*** file i/o ***/
 
 void open_file(char *filename) {
@@ -451,6 +470,9 @@ void editor_process_keypress() {
     case ARROW_LEFT:
     case ARROW_RIGHT:
       move_cursor(c);
+      break;
+    default: 
+      editor_insert_char(c);
       break;
   }
 }
