@@ -407,12 +407,42 @@ void append_row(char *s, size_t len) {
   configuration.dirty = 1;
 }
 
+void free_row(Row *row) {
+  free(row->render.render);
+  free(row->chars);
+}
+
+void del_row(int at) {
+  if (at < 0 || at >= configuration.num_rows) return;
+  free_row(&configuration.row[at]);
+  memmove(&configuration.row[at], &configuration.row[at + 1], sizeof(Row) * (configuration.num_rows - at - 1));
+  configuration.num_rows--;
+  configuration.dirty = 1;
+}
+
 void row_insert_char(Row *row, int at, int c) {
   if (at < 0 || at > row->size) at = row->size;
   row->chars = realloc(row->chars, row->size + 2);
   memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
   row->size++;
   row->chars[at] = c;
+  update_row(row);
+  configuration.dirty = 1;
+}
+
+void row_append_string(Row *row, char *s, size_t len) {
+  row->chars = realloc(row->chars, row->size + len + 1);
+  memcpy(&row->chars[row->size], s, len);
+  row->size += len;
+  row->chars[row->size] = '\0';
+  update_row(row);
+  configuration.dirty++;
+}
+
+void row_del_char(Row *row, int at) { 
+  if (at < 0 || at >= row->size) return;
+  memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
+  row->size--;
   update_row(row);
   configuration.dirty = 1;
 }
@@ -425,6 +455,20 @@ void editor_insert_char(int c) {
   }
   row_insert_char(&configuration.row[configuration.cy], configuration.cx, c);
   configuration.cx++;
+}
+
+void del_char() {
+  if (configuration.cy == configuration.num_rows) return;
+  if (configuration.cx == 0 && configuration.cy == 0) return;
+  Row *row = &configuration.row[configuration.cy];
+  if (configuration.cx > 0) {
+    row_del_char(row, --configuration.cx);
+  } else {
+    configuration.cx = configuration.row[configuration.cy - 1].size;
+    row_append_string(&configuration.row[configuration.cy - 1], row->chars, row->size);
+    del_row(configuration.cy);
+    configuration.cy--;
+  }
 }
 
 /*** file i/o ***/
@@ -513,10 +557,12 @@ void editor_process_keypress() {
         configuration.cx = configuration.row[configuration.cy].size;
       }
       break;
+    case DEL_KEY:
+      move_cursor(ARROW_RIGHT);
+      __attribute__ ((fallthrough));
     case BACKSPACE:
     case CTRL_KEY('h'):
-    case DEL_KEY:
-      /*TODO*/
+      del_char();
       break;
     case PAGE_UP:
     case PAGE_DOWN:
