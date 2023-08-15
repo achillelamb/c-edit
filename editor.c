@@ -29,6 +29,7 @@
 #define SPACE ' '
 #define CARRIAGE '\r'
 #define SAVE 's'
+#define QUIT_TIMES 2
 
 enum Keys {
   BACKSPACE = 127,
@@ -68,6 +69,7 @@ struct Config {
   char *file_name;
   char status_msg[80];
   time_t status_time;
+  int dirty;
 };
 
 struct Config configuration;
@@ -172,8 +174,9 @@ void draw_status_bar(struct Buffer *b) {
   char invert_colors[4] = ESCAPE_PREFIX;
   buf_append(b, strcat(invert_colors, "7m"), 4);
   char status[80], rstatus[80];
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-    configuration.file_name ? configuration.file_name : "[New File]", configuration.num_rows);
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
+    configuration.file_name ? configuration.file_name : "[New File]", configuration.num_rows,
+    configuration.dirty ? "(modified)" : "");
   int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d",
     configuration.cy + 1, configuration.num_rows);
   if (len > configuration.screencols) len = configuration.screencols;
@@ -401,6 +404,7 @@ void append_row(char *s, size_t len) {
   configuration.row[at].render.render = NULL;
   update_row(&configuration.row[at]);
   configuration.num_rows++;
+  configuration.dirty = 1;
 }
 
 void row_insert_char(Row *row, int at, int c) {
@@ -410,6 +414,7 @@ void row_insert_char(Row *row, int at, int c) {
   row->size++;
   row->chars[at] = c;
   update_row(row);
+  configuration.dirty = 1;
 }
 
 /*** editor operations ***/
@@ -440,6 +445,7 @@ void open_file(char *filename) {
   }
   free(line);
   fclose(fp);
+  configuration.dirty = 0;
 }
 
 char *rows_to_string(int *buflen) {
@@ -470,6 +476,7 @@ void save_file() {
       if (write(file_descriptor, buf, len) == len) {
         close(file_descriptor);
         free(buf);
+        configuration.dirty = 0;
         set_status_message("%d bytes written on disk", len);
         return;
       }
@@ -482,12 +489,19 @@ void save_file() {
 /*** input ***/
 
 void editor_process_keypress() {
+  static int quit_times = QUIT_TIMES;
   int c = editor_read_key();
   switch (c) {
     case CARRIAGE:
       /*TODO*/
       break;
     case CTRL_KEY(QUIT):
+      if (configuration.dirty && quit_times > 0) {
+        set_status_message("!!! File has unsaved changes! "
+          "Press Ctrl-Q %d more times to quit without saving.", quit_times);
+        quit_times--;
+        return; // early return such that quit_times is not reset at the end of the function.
+      }
       refresh_screen();
       exit(0);
       break;
@@ -534,6 +548,7 @@ void editor_process_keypress() {
       editor_insert_char(c);
       break;
   }
+  quit_times = QUIT_TIMES;
 }
 
 /*** init ***/
@@ -552,6 +567,7 @@ void init_editor() {
   if (get_window_size(&configuration.screenrows, &configuration.screencols) == -1) die("get_window_size");
   configuration.screenrows--; // status bar
   configuration.screenrows--; // status message
+  configuration.dirty = 0; 
 }
 
 int main(int argc, char *argv[]) {
