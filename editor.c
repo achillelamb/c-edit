@@ -72,6 +72,10 @@ struct Config {
 
 struct Config configuration;
 
+/*** prototypes ***/
+
+void set_status_message(const char *fmt, ...);
+
 /*** append buffer ***/
 
 struct Buffer {
@@ -461,10 +465,19 @@ void save_file() {
   int len;
   char *buf = rows_to_string(&len);
   int file_descriptor = open(configuration.file_name, O_RDWR | O_CREAT, 0644);
-  ftruncate(file_descriptor, len);
-  write(file_descriptor, buf, len);
-  close(file_descriptor);
+  if (file_descriptor != -1) {
+    if (ftruncate(file_descriptor, len) != -1) {
+      if (write(file_descriptor, buf, len) == len) {
+        close(file_descriptor);
+        free(buf);
+        set_status_message("%d bytes written on disk", len);
+        return;
+      }
+    }
+    close(file_descriptor);
+  }
   free(buf);
+  set_status_message("Cannot save! I/O Error: %s", strerror(errno));
 }
 /*** input ***/
 
@@ -548,7 +561,7 @@ int main(int argc, char *argv[]) {
     open_file(argv[1]);
   }
 
-  set_status_message("Ctrl-Q: quit");
+  set_status_message("Ctrl-Q: quit | Ctrl-S: save");
   while (1) {
     refresh_screen();
     editor_process_keypress();
