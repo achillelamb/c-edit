@@ -393,9 +393,10 @@ void update_row(Row *row) {
   row->render.size = idx;
 }
 
-void append_row(char *s, size_t len) {
+void insert_row(int at, char *s, size_t len) {
+  if (at < 0 || at > configuration.num_rows) return;
   configuration.row = realloc(configuration.row, sizeof(Row) * (configuration.num_rows + 1));
-  int at = configuration.num_rows;
+  memmove(&configuration.row[at + 1], &configuration.row[at], sizeof(Row) * (configuration.num_rows - at));
   configuration.row[at].size = len;
   configuration.row[at].chars = malloc(len + 1);
   memcpy(configuration.row[at].chars, s, len);
@@ -451,7 +452,7 @@ void row_del_char(Row *row, int at) {
 
 void editor_insert_char(int c) {
   if (configuration.cy == configuration.num_rows) {
-    append_row("", 0);
+    insert_row(configuration.num_rows, "", 0);
   }
   row_insert_char(&configuration.row[configuration.cy], configuration.cx, c);
   configuration.cx++;
@@ -471,6 +472,21 @@ void del_char() {
   }
 }
 
+void insert_newline() {
+  if (configuration.cx == 0) {
+    insert_row(configuration.cy, "", 0);
+  } else {
+    Row *row = &configuration.row[configuration.cy];
+    insert_row(configuration.cy + 1, &row->chars[configuration.cx], row->size - configuration.cx);
+    row = &configuration.row[configuration.cy];
+    row->size = configuration.cx;
+    row->chars[row->size] = '\0';
+    update_row(row);
+  }
+  configuration.cy++;
+  configuration.cx = 0;
+}
+
 /*** file i/o ***/
 
 void open_file(char *filename) {
@@ -485,7 +501,7 @@ void open_file(char *filename) {
     while (linelen > 0 && (line[linelen - 1] == '\n' ||
                            line[linelen - 1] == '\r'))
       linelen--;
-    append_row(line, linelen);
+    insert_row(configuration.num_rows, line, linelen);
   }
   free(line);
   fclose(fp);
@@ -537,7 +553,7 @@ void editor_process_keypress() {
   int c = editor_read_key();
   switch (c) {
     case CARRIAGE:
-      /*TODO*/
+      insert_newline();
       break;
     case CTRL_KEY(QUIT):
       if (configuration.dirty && quit_times > 0) {
