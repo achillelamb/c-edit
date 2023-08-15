@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <stdarg.h>
+#include <fcntl.h>
 
 /*** defines ***/
 
@@ -26,8 +27,11 @@
 #define TAB '\t'
 #define TAB_LEN 4
 #define SPACE ' '
+#define CARRIAGE '\r'
+#define SAVE 's'
 
 enum Keys {
+  BACKSPACE = 127,
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
   ARROW_UP,
@@ -434,11 +438,42 @@ void open_file(char *filename) {
   fclose(fp);
 }
 
+char *rows_to_string(int *buflen) {
+  int totlen = 0;
+  int j;
+  for (j = 0; j < configuration.num_rows; j++)
+    totlen += configuration.row[j].size + 1;
+  *buflen = totlen;
+  char *buf = malloc(totlen);
+  char *p = buf;
+  for (j = 0; j < configuration.num_rows; j++) {
+    memcpy(p, configuration.row[j].chars, configuration.row[j].size);
+    p += configuration.row[j].size;
+    *p = '\n';
+    p++;
+  }
+  return buf;
+}
+
+
+void save_file() {
+  if (configuration.file_name == NULL) return;
+  int len;
+  char *buf = rows_to_string(&len);
+  int file_descriptor = open(configuration.file_name, O_RDWR | O_CREAT, 0644);
+  ftruncate(file_descriptor, len);
+  write(file_descriptor, buf, len);
+  close(file_descriptor);
+  free(buf);
+}
 /*** input ***/
 
 void editor_process_keypress() {
   int c = editor_read_key();
   switch (c) {
+    case CARRIAGE:
+      /*TODO*/
+      break;
     case CTRL_KEY(QUIT):
       refresh_screen();
       exit(0);
@@ -450,6 +485,11 @@ void editor_process_keypress() {
       if (configuration.cy < configuration.num_rows) {
         configuration.cx = configuration.row[configuration.cy].size;
       }
+      break;
+    case BACKSPACE:
+    case CTRL_KEY('h'):
+    case DEL_KEY:
+      /*TODO*/
       break;
     case PAGE_UP:
     case PAGE_DOWN:
@@ -470,6 +510,12 @@ void editor_process_keypress() {
     case ARROW_LEFT:
     case ARROW_RIGHT:
       move_cursor(c);
+      break;
+    case CTRL_KEY(SAVE):
+      save_file();
+      break;
+    case CTRL_KEY('l'):
+    case '\x1b':
       break;
     default: 
       editor_insert_char(c);
