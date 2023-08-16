@@ -30,6 +30,7 @@
 #define CARRIAGE '\r'
 #define SAVE 's'
 #define QUIT_TIMES 2
+#define ESC '\x1b'
 
 enum Keys {
   BACKSPACE = 127,
@@ -77,6 +78,7 @@ struct Config configuration;
 /*** prototypes ***/
 
 void set_status_message(const char *fmt, ...);
+char *editor_prompt(char *prompt);
 
 /*** append buffer ***/
 
@@ -323,7 +325,7 @@ int editor_read_key() {
     if (read(STDIN_FILENO, &seq[1], 1) != 1) return ESCAPE_PREFIX[0];
     if (seq[0] == ESCAPE_PREFIX[1]) {
       if (seq[1] >= '0' && seq[1] <= '9') {
-        if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
+        if (read(STDIN_FILENO, &seq[2], 1) != 1) return ESC;
         if (seq[2] == '~') {
           switch (seq[1]) {
             case '1': return HOME_KEY;
@@ -527,7 +529,13 @@ char *rows_to_string(int *buflen) {
 
 
 void save_file() {
-  if (configuration.file_name == NULL) return;
+  if (configuration.file_name == NULL) {
+    configuration.file_name = editor_prompt("Save as (ESC to cancel): %s");
+      if (configuration.file_name == NULL) {
+        set_status_message("Save aborted");
+        return;
+      }
+  }
   int len;
   char *buf = rows_to_string(&len);
   int file_descriptor = open(configuration.file_name, O_RDWR | O_CREAT, 0644);
@@ -547,6 +555,37 @@ void save_file() {
   set_status_message("Cannot save! I/O Error: %s", strerror(errno));
 }
 /*** input ***/
+
+char *editor_prompt(char *prompt) {
+  size_t bufsize = 1 << 7;
+  char *buf = malloc(bufsize);
+  size_t buflen = 0;
+  buf[0] = '\0';
+  while (1) {
+    set_status_message(prompt, buf);
+    refresh_screen();
+    int c = editor_read_key();
+    if (c == DEL_KEY || c == CTRL_KEY('h') || c == BACKSPACE) {
+      if (buflen != 0) buf[--buflen] = '\0';
+    } else if (c == ESC) {
+      set_status_message("");
+      free(buf);
+      return NULL;
+    } else if (c == CARRIAGE) {
+      if (buflen != 0) {
+        set_status_message("");
+        return buf;
+      }
+    } else if (!iscntrl(c) && c < 1 << 7) {
+      if (buflen == bufsize - 1) {
+        bufsize *= 2;
+        buf = realloc(buf, bufsize);
+      }
+      buf[buflen++] = c;
+      buf[buflen] = '\0';
+    }
+  }
+}
 
 void editor_process_keypress() {
   static int quit_times = QUIT_TIMES;
@@ -604,7 +643,7 @@ void editor_process_keypress() {
       save_file();
       break;
     case CTRL_KEY('l'):
-    case '\x1b':
+    case ESC:
       break;
     default: 
       editor_insert_char(c);
