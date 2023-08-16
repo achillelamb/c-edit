@@ -1,2 +1,2 @@
-editor: editor.c
-		$(CC) editor.c -o editor -Wall -Wextra -pedantic -std=c99
+editor: main.c
+		$(CC) main.c -o c-edit -Wall -Wextra -pedantic -std=c99
